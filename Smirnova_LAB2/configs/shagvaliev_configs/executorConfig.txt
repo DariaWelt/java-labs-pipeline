@@ -1,0 +1,4 @@
+# line which starts with '#' is a comment
+
+# enable reversing: 'True' or 'False'
+enable reversing: True

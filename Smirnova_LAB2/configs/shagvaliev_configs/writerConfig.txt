@@ -1,0 +1,4 @@
+# line which starts with '#' is a comment
+
+# buffer size: positive value
+buffer size: 1000
