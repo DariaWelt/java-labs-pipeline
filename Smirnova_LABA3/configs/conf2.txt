@@ -1,0 +1,11 @@
+inputStream=./read.txt
+outputStream=./write.txt
+processesAmount=4
+process0=ru.spbstu.Antonov_Aleksei.Reader
+configuration0=\configs\antonov_configs\readerconfig.txt
+process1=ru.spbstu.SmirnovaD.CycleShiftEncoder
+configuration1=\configs\smirnova_configs\executor_config1.txt
+process2=ru.spbstu.SmirnovaD.CycleShiftEncoder
+configuration2=\configs\smirnova_configs\executor_config2.txt
+process3=ru.spbstu.SmirnovaD.Writer
+configuration3=\configs\smirnova_configs\writerconfig.txt
