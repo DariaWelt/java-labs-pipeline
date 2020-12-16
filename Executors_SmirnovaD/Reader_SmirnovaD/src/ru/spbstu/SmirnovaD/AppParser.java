@@ -64,7 +64,7 @@ public class AppParser {
                 value = Integer.parseInt(map.get(AppConfigParams.SHIFT_AMOUNT.toString()));
             else if (mode == Mode.MODE_READER || mode == Mode.MODE_WRITER) {
                 value = Integer.parseInt(map.get(AppConfigParams.BUFFER_CAPACITY.toString()));
-                if (value <= 0)
+                if (value <= 0 || value % 2 != 0 )
                     throw new NumberFormatException();
             }
             else

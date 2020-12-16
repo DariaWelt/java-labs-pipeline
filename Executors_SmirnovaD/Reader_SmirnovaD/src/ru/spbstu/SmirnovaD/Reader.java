@@ -6,20 +6,62 @@ import ru.spbstu.pipeline.*;
 
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public class Reader implements IReader {
     private final Logger LOGGER;
+    private final static TYPE[] supportedOutputTypes = {TYPE.BYTE, TYPE.SHORT, TYPE.CHAR};
+    private final static int mask = 0x00ff;
+    private final static int byteSize = 8;
+
     private FileInputStream stream;
-    private IExecutable consumer;
+    private IConsumer consumer;
     private int bufferCapacity;
+    private byte[] processedData;
+
 
     public Reader(Logger logger) {
         LOGGER = logger;
         stream = null;
         consumer = null;
+        processedData = null;
+    }
+
+    private class Mediator implements IMediator {
+        private final TYPE returnedType;
+        Mediator(TYPE type) {
+            returnedType = type;
+        }
+        @Override
+        public Object getData() {
+            if (processedData == null)
+                return null;
+            switch (returnedType) {
+                case BYTE: {
+                    byte[] newArray = new byte[processedData.length];
+                    System.arraycopy(processedData, 0, newArray, 0, newArray.length);
+                    return newArray;
+                }
+                case SHORT: {
+                    short[] newArray = new short[processedData.length / 2];
+                    for (int i = 0; i < processedData.length / 2; ++i ){
+                        byte hiWord = processedData[2 * i];
+                        byte loWord = processedData[2 * i + 1];
+                        newArray[i] = (short)((hiWord << byteSize) | loWord & mask);
+                    }
+                    return newArray;
+                }
+                case CHAR:{
+                    String text = new String(processedData, StandardCharsets.UTF_8);
+                    return text.toCharArray();
+                }
+                default:
+                    return null;
+            }
+        }
     }
 
     @Override
@@ -36,7 +78,7 @@ public class Reader implements IReader {
     }
 
     @Override
-    public RC setConsumer(IExecutable process) {
+    public RC setConsumer(IConsumer process) {
         if (process == null) {
             LOGGER.log(Level.WARNING, LogType.FAULT_IN_METHOD.toString(),
                     RC.CODE_FAILED_PIPELINE_CONSTRUCTION.toString());
@@ -47,18 +89,20 @@ public class Reader implements IReader {
     }
 
     @Override
-    public RC setProducer(IExecutable process) {
+    public RC setProducer(IProducer iProducer) {
         return RC.CODE_SUCCESS;
     }
 
     @Override
-    public RC execute(byte[] data) { // data == null
+    public RC execute() {
         byte[] buffer = new byte[bufferCapacity];
         try {
             int readed = stream.read(buffer);
             while (readed >= 0) {
-                byte[] readedData = Arrays.copyOfRange(buffer, 0, readed);
-                RC err = consumer.execute(readedData);
+                if (readed % 2 != 0)
+                    readed += 1;
+                processedData = Arrays.copyOfRange(buffer, 0, readed);
+                RC err = consumer.execute();
                 if (err != RC.CODE_SUCCESS)
                     return err;
                 readed = stream.read(buffer);
@@ -80,5 +124,15 @@ public class Reader implements IReader {
         }
         stream = input;
         return RC.CODE_SUCCESS;
+    }
+
+    @Override
+    public TYPE[] getOutputTypes() {
+        return supportedOutputTypes;
+    }
+
+    @Override
+    public IMediator getMediator(TYPE type) {
+        return new Mediator(type);
     }
 }
