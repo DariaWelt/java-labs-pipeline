@@ -1,1 +1,0 @@
-table_file = configs/timofeev_configs/table.txt

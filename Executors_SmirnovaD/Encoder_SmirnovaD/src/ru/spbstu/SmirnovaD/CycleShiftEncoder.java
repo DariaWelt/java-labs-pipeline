@@ -1,13 +1,12 @@
 package ru.spbstu.SmirnovaD;
 
-import javafx.scene.media.MediaView;
 import javafx.util.Pair;
 import ru.spbstu.pipeline.*;
 
-import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
-import java.util.Set;
-import java.util.TreeSet;
+import java.util.LinkedList;
+import java.util.NoSuchElementException;
+import java.util.Queue;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -22,10 +21,33 @@ public class CycleShiftEncoder implements IExecutor {
     private final static int byteSize = 8;
 
     private IMediator produsersMediator;
-    private IConsumer consumer;
+    private INotifier notifier;
     private Integer shift;
     private byte[] processedData;
+    private Queue<byte[]> collectedData;
     private TYPE chosenInputType;
+    private volatile int numWaitedChunks;
+
+    @Override
+    public void run() {
+        while (processedData != null) {
+            if (numWaitedChunks > 0) {
+                numWaitedChunks--;
+                RC error = execute();
+                if (error != RC.CODE_SUCCESS)
+                    return;
+                collectedData.add(processedData);
+                notifier.notify(0);
+            }
+        }
+        while (true) {
+            try {
+                collectedData.element();
+            } catch (NoSuchElementException e) {
+                return;
+            }
+        }
+    }
 
     private class Mediator implements IMediator {
         private final TYPE returnedType;
@@ -33,26 +55,29 @@ public class CycleShiftEncoder implements IExecutor {
             returnedType = type;
         }
         @Override
-        public Object getData() {
-            if (processedData == null)
-                return null;
+        public Object getData(int idChunk) {
+            byte[] data = collectedData.poll();
+            if (data == null) {
+                //System.out.println("data in encoder Mediator is null (57)");
+                return data;
+            }
             switch (returnedType) {
                 case BYTE: {
-                    byte[] newArray = new byte[processedData.length];
-                    System.arraycopy(processedData, 0, newArray, 0, newArray.length);
+                    byte[] newArray = new byte[data.length];
+                    System.arraycopy(data, 0, newArray, 0, newArray.length);
                     return newArray;
                 }
                 case SHORT: {
-                    short[] newArray = new short[processedData.length / 2];
-                    for (int i = 0; i < processedData.length / 2; ++i ){
-                        byte hiWord = processedData[2 * i];
-                        byte loWord = processedData[2 * i + 1];
+                    short[] newArray = new short[data.length / 2];
+                    for (int i = 0; i < data.length / 2; ++i ){
+                        byte hiWord = data[2 * i];
+                        byte loWord = data[2 * i + 1];
                         newArray[i] = (short)((hiWord << byteSize) | loWord & mask);
                     }
                     return newArray;
                 }
                 case CHAR:{
-                    String text = new String(processedData, StandardCharsets.UTF_8);
+                    String text = new String(data, StandardCharsets.UTF_8);
                     return text.toCharArray();
                 }
                 default:
@@ -61,41 +86,53 @@ public class CycleShiftEncoder implements IExecutor {
         }
     }
 
-    public CycleShiftEncoder(Logger logger) {
-        LOGGER = logger;
-        processedData = null;
-        produsersMediator = null;
-        consumer = null;
-        shift = 0;
-        chosenInputType = null;
+    private class Notifier implements INotifier {
+        @Override
+        public RC notify(int i) {
+            numWaitedChunks++;
+            return RC.CODE_SUCCESS;
+        }
     }
 
-    @Override
+    public CycleShiftEncoder(Logger logger) {
+        LOGGER = logger;
+        processedData = new byte[0];
+        produsersMediator = null;
+        notifier = null;
+        shift = 0;
+        chosenInputType = null;
+        numWaitedChunks = 0;
+        collectedData = new LinkedList<>();
+    }
+
     public RC execute() {
+
         switch (chosenInputType) {
             case BYTE:
-                processedData = (byte[])produsersMediator.getData();
+                processedData = (byte[])produsersMediator.getData(0);
                 break;
             case SHORT:
-                short[] data = (short[])produsersMediator.getData();
+                short[] data = (short[])produsersMediator.getData(0);
                 processedData = convertToByte(data);
                 break;
         }
-        for (int i = 0; i < processedData.length; ++i) {
-            processedData[i] += shift;
-            // сохраняем инвариант при каждом изменении
-            //while (processedData[i] < - maxShift || processedData[i] > maxShift)
-            //    processedData[i] += maxShift;
-            //processedData[i] %= maxShift;
+        if (processedData != null) {
+            for (int i = 0; i < processedData.length; ++i) {
+                processedData[i] += shift;
+                // сохраняем инвариант при каждом изменении
+                //while (processedData[i] < - maxShift || processedData[i] > maxShift)
+                //    processedData[i] += maxShift;
+                //processedData[i] %= maxShift;
+            }
         }
-        // передаем следующему на конвейере
-        RC err = consumer.execute();
-        // когда все следующие процессы выполнены, проверяем вернувшийся код
-        if (err != RC.CODE_SUCCESS)
-            return err;
-        // Если все хорошо, в лог пишем, что прошло успешно
+        // в лог пишем, что прошло успешно
         LOGGER.log(Level.FINE, LogType.SUCCESS_FINISH_METHOD.toString());
-        return err;
+        return RC.CODE_SUCCESS;
+    }
+
+    @Override
+    public INotifier getNotifier() {
+        return new Notifier();
     }
 
     @Override
@@ -111,6 +148,17 @@ public class CycleShiftEncoder implements IExecutor {
             return result.getValue();
         // храним число от 0 до maxShift для удобства
         shift = result.getKey();
+        return RC.CODE_SUCCESS;
+    }
+
+    @Override
+    public RC addNotifier(INotifier iNotifier) {
+        if (iNotifier == null){
+            LOGGER.log(Level.WARNING, LogType.FAULT_IN_METHOD.toString(),
+                    RC.CODE_FAILED_PIPELINE_CONSTRUCTION.toString());
+            return RC.CODE_FAILED_PIPELINE_CONSTRUCTION;
+        }
+        notifier = iNotifier;
         return RC.CODE_SUCCESS;
     }
 
@@ -133,17 +181,6 @@ public class CycleShiftEncoder implements IExecutor {
     }
 
     @Override
-    public RC setConsumer(IConsumer process) {
-        if (process == null) {
-            LOGGER.log(Level.WARNING, LogType.FAULT_IN_METHOD.toString(),
-                    RC.CODE_FAILED_PIPELINE_CONSTRUCTION.toString());
-            return RC.CODE_FAILED_PIPELINE_CONSTRUCTION;
-        }
-        consumer = process;
-        return RC.CODE_SUCCESS;
-    }
-
-    @Override
     public TYPE[] getOutputTypes() {
         return supportedOutputTypes;
     }
@@ -161,7 +198,6 @@ public class CycleShiftEncoder implements IExecutor {
         }
         return newArray;
     }
-
 
     private TYPE findFirstIntersection(TYPE[] arr1, TYPE[] arr2) {
         for (TYPE type1 : arr1) {

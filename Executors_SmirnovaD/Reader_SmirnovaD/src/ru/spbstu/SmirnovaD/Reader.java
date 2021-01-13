@@ -1,13 +1,15 @@
 package ru.spbstu.SmirnovaD;
 
 import javafx.util.Pair;
-import ru.spbstu.SmirnovaD.*;
 import ru.spbstu.pipeline.*;
 
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.LinkedList;
+import java.util.NoSuchElementException;
+import java.util.Queue;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -18,16 +20,52 @@ public class Reader implements IReader {
     private final static int byteSize = 8;
 
     private FileInputStream stream;
-    private IConsumer consumer;
+    private INotifier notifier;
     private int bufferCapacity;
     private byte[] processedData;
+    private Queue<byte[]> collectedData;
 
 
     public Reader(Logger logger) {
         LOGGER = logger;
         stream = null;
-        consumer = null;
-        processedData = null;
+        notifier = null;
+        processedData = new byte[0];
+        collectedData = new LinkedList<>();
+    }
+
+    @Override
+    public void run() {
+        if (notifier == null || stream == null){
+            LOGGER.log(Level.WARNING, LogType.FAULT_IN_METHOD.toString(),
+                    RC.CODE_FAILED_PIPELINE_CONSTRUCTION.toString());
+            return;
+        }
+        byte[] buffer = new byte[bufferCapacity];
+        try {
+            int readed = stream.read(buffer);
+            while (readed >= 0) {
+                if (readed % 2 != 0)
+                    readed += 1;
+                processedData = Arrays.copyOfRange(buffer, 0, readed);
+                collectedData.add(processedData);
+                notifier.notify(0);
+                readed = stream.read(buffer);
+            }
+            collectedData.add(null);
+            notifier.notify(0);
+        } catch (IOException e) {
+            LOGGER.log(Level.WARNING, LogType.FAULT_IN_METHOD.toString(),
+                    RC.CODE_FAILED_TO_READ.toString());
+            return;
+        }
+        while (true) {
+            try {
+                collectedData.element();
+            } catch (NoSuchElementException e) {
+                return;
+            }
+        }
     }
 
     private class Mediator implements IMediator {
@@ -36,26 +74,27 @@ public class Reader implements IReader {
             returnedType = type;
         }
         @Override
-        public Object getData() {
-            if (processedData == null)
+        public Object getData(int idChunk) {
+            byte[] data = collectedData.poll();
+            if (data == null)
                 return null;
             switch (returnedType) {
                 case BYTE: {
-                    byte[] newArray = new byte[processedData.length];
-                    System.arraycopy(processedData, 0, newArray, 0, newArray.length);
+                    byte[] newArray = new byte[data.length];
+                    System.arraycopy(data, 0, newArray, 0, newArray.length);
                     return newArray;
                 }
                 case SHORT: {
-                    short[] newArray = new short[processedData.length / 2];
-                    for (int i = 0; i < processedData.length / 2; ++i ){
-                        byte hiWord = processedData[2 * i];
-                        byte loWord = processedData[2 * i + 1];
+                    short[] newArray = new short[data.length / 2];
+                    for (int i = 0; i < data.length / 2; ++i ){
+                        byte hiWord = data[2 * i];
+                        byte loWord = data[2 * i + 1];
                         newArray[i] = (short)((hiWord << byteSize) | loWord & mask);
                     }
                     return newArray;
                 }
                 case CHAR:{
-                    String text = new String(processedData, StandardCharsets.UTF_8);
+                    String text = new String(data, StandardCharsets.UTF_8);
                     return text.toCharArray();
                 }
                 default:
@@ -77,41 +116,15 @@ public class Reader implements IReader {
         return RC.CODE_SUCCESS;
     }
 
+
     @Override
-    public RC setConsumer(IConsumer process) {
-        if (process == null) {
+    public RC addNotifier(INotifier iNotifier) {
+        if (iNotifier == null){
             LOGGER.log(Level.WARNING, LogType.FAULT_IN_METHOD.toString(),
                     RC.CODE_FAILED_PIPELINE_CONSTRUCTION.toString());
             return RC.CODE_FAILED_PIPELINE_CONSTRUCTION;
         }
-        consumer = process;
-        return RC.CODE_SUCCESS;
-    }
-
-    @Override
-    public RC setProducer(IProducer iProducer) {
-        return RC.CODE_SUCCESS;
-    }
-
-    @Override
-    public RC execute() {
-        byte[] buffer = new byte[bufferCapacity];
-        try {
-            int readed = stream.read(buffer);
-            while (readed >= 0) {
-                if (readed % 2 != 0)
-                    readed += 1;
-                processedData = Arrays.copyOfRange(buffer, 0, readed);
-                RC err = consumer.execute();
-                if (err != RC.CODE_SUCCESS)
-                    return err;
-                readed = stream.read(buffer);
-            }
-        } catch (IOException e) {
-            LOGGER.log(Level.WARNING, LogType.FAULT_IN_METHOD.toString(),
-                    RC.CODE_FAILED_TO_READ.toString());
-            return RC.CODE_FAILED_TO_READ;
-        }
+        notifier = iNotifier;
         return RC.CODE_SUCCESS;
     }
 

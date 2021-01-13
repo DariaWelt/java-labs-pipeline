@@ -5,8 +5,8 @@ import ru.spbstu.pipeline.*;
 
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.sql.Array;
 import java.util.Arrays;
+import java.util.LinkedList;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -22,13 +22,34 @@ public class Writer implements IWriter {
     private IMediator mediator;
     private int bufferCapacity;
     private TYPE chosenInputType;
+    private volatile int numWaitedChunks;
 
     public Writer(Logger logger) {
         LOGGER = logger;
         stream = null;
         mediator = null;
         chosenInputType = null;
-        data = null;
+        data = new byte[0];
+
+    }
+
+    private class Notifier implements INotifier {
+        @Override
+        public RC notify(int i) {
+            numWaitedChunks++;
+            return RC.CODE_SUCCESS;
+        }
+    }
+    @Override
+    public void run() {
+        while (data != null) {
+            if (numWaitedChunks > 0) {
+                numWaitedChunks--;
+                RC error = execute();
+                if (error != RC.CODE_SUCCESS)
+                    return;
+            }
+        }
     }
 
     @Override
@@ -44,8 +65,9 @@ public class Writer implements IWriter {
         return RC.CODE_SUCCESS;
     }
 
+
     @Override
-    public RC setConsumer(IConsumer process) {
+    public RC addNotifier(INotifier iNotifier) {
         return RC.CODE_SUCCESS;
     }
 
@@ -66,17 +88,21 @@ public class Writer implements IWriter {
         return RC.CODE_SUCCESS;
     }
 
-    @Override
     public RC execute() {
+        Object mediatorsData = mediator.getData(0);
+        if (mediatorsData == null) {
+            data = null;
+            return RC.CODE_SUCCESS;
+        }
         switch (chosenInputType) {
             case BYTE:
-                data = (byte[])mediator.getData();
+                data = (byte[])mediatorsData;
                 break;
             case CHAR:
-                data = Arrays.toString(((char[]) mediator.getData())).getBytes();
+                data = Arrays.toString(((char[]) mediatorsData)).getBytes();
                 break;
             case SHORT:
-                data = convertToByte((short[])mediator.getData());
+                data = convertToByte((short[])mediatorsData);
                 break;
         }
         byte[] buffer;
@@ -91,6 +117,11 @@ public class Writer implements IWriter {
             return RC.CODE_FAILED_TO_WRITE;
         }
         return RC.CODE_SUCCESS;
+    }
+
+    @Override
+    public INotifier getNotifier() {
+        return new Notifier();
     }
 
     @Override

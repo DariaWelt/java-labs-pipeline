@@ -1,0 +1,8 @@
+<component name="ArtifactManager">
+  <artifact type="jar" name="Encoder_SmirnovaD:jar">
+    <output-path>$PROJECT_DIR$/Smirnova_LABA4/artifacts</output-path>
+    <root id="archive" name="Encoder_SmirnovaD.jar">
+      <element id="module-output" name="Encoder_SmirnovaD" />
+    </root>
+  </artifact>
+</component>
