@@ -45,12 +45,14 @@ public class Reader implements IReader {
         try {
             int readed = stream.read(buffer);
             while (readed >= 0) {
-                if (readed % 2 != 0)
-                    readed += 1;
-                processedData = Arrays.copyOfRange(buffer, 0, readed);
-                collectedData.add(processedData);
-                notifier.notify(0);
-                readed = stream.read(buffer);
+                synchronized (collectedData) {
+                    if (readed % 2 != 0)
+                        readed += 1;
+                    processedData = Arrays.copyOfRange(buffer, 0, readed);
+                    collectedData.add(processedData);
+                    notifier.notify(0);
+                    readed = stream.read(buffer);
+                }
             }
             collectedData.add(null);
             notifier.notify(0);
@@ -58,13 +60,6 @@ public class Reader implements IReader {
             LOGGER.log(Level.WARNING, LogType.FAULT_IN_METHOD.toString(),
                     RC.CODE_FAILED_TO_READ.toString());
             return;
-        }
-        while (true) {
-            try {
-                collectedData.element();
-            } catch (NoSuchElementException e) {
-                return;
-            }
         }
     }
 

@@ -33,18 +33,13 @@ public class CycleShiftEncoder implements IExecutor {
         while (processedData != null) {
             if (numWaitedChunks > 0) {
                 numWaitedChunks--;
-                RC error = execute();
-                if (error != RC.CODE_SUCCESS)
-                    return;
-                collectedData.add(processedData);
-                notifier.notify(0);
-            }
-        }
-        while (true) {
-            try {
-                collectedData.element();
-            } catch (NoSuchElementException e) {
-                return;
+                synchronized (collectedData){
+                    RC error = execute();
+                    if (error != RC.CODE_SUCCESS)
+                        return;
+                    collectedData.add(processedData);
+                    notifier.notify(0);
+                }
             }
         }
     }
@@ -58,8 +53,7 @@ public class CycleShiftEncoder implements IExecutor {
         public Object getData(int idChunk) {
             byte[] data = collectedData.poll();
             if (data == null) {
-                //System.out.println("data in encoder Mediator is null (57)");
-                return data;
+                return null;
             }
             switch (returnedType) {
                 case BYTE: {
