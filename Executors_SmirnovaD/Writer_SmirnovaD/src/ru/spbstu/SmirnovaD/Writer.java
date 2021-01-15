@@ -36,7 +36,9 @@ public class Writer implements IWriter {
     private class Notifier implements INotifier {
         @Override
         public RC notify(int i) {
-            numWaitedChunks++;
+            synchronized (Writer.this) {
+                numWaitedChunks++;
+            }
             return RC.CODE_SUCCESS;
         }
     }
@@ -44,7 +46,9 @@ public class Writer implements IWriter {
     public void run() {
         while (data != null) {
             if (numWaitedChunks > 0) {
-                numWaitedChunks--;
+                synchronized (this) {
+                    numWaitedChunks--;
+                }
                 RC error = execute();
                 if (error != RC.CODE_SUCCESS)
                     return;

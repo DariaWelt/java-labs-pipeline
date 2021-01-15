@@ -17,5 +17,15 @@
         <jarDirectory url="file://$MODULE_DIR$/Smirnova_LABA4/artifacts" recursive="false" />
       </library>
     </orderEntry>
+    <orderEntry type="module-library">
+      <library>
+        <CLASSES>
+          <root url="file://$MODULE_DIR$/Smirnova_LABA4/libs" />
+        </CLASSES>
+        <JAVADOC />
+        <SOURCES />
+        <jarDirectory url="file://$MODULE_DIR$/Smirnova_LABA4/libs" recursive="false" />
+      </library>
+    </orderEntry>
   </component>
 </module>

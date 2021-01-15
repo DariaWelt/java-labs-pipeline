@@ -24,7 +24,7 @@ public class CycleShiftEncoder implements IExecutor {
     private INotifier notifier;
     private Integer shift;
     private byte[] processedData;
-    private Queue<byte[]> collectedData;
+    private final Queue<byte[]> collectedData;
     private TYPE chosenInputType;
     private volatile int numWaitedChunks;
 
@@ -32,14 +32,15 @@ public class CycleShiftEncoder implements IExecutor {
     public void run() {
         while (processedData != null) {
             if (numWaitedChunks > 0) {
-                numWaitedChunks--;
-                synchronized (collectedData){
-                    RC error = execute();
-                    if (error != RC.CODE_SUCCESS)
-                        return;
-                    collectedData.add(processedData);
-                    notifier.notify(0);
+                synchronized (this) {
+                    numWaitedChunks--;
                 }
+                RC error = execute();
+                if (error != RC.CODE_SUCCESS) return;
+                synchronized (collectedData) {
+                    collectedData.add(processedData);
+                }
+                notifier.notify(0);
             }
         }
     }
@@ -51,7 +52,10 @@ public class CycleShiftEncoder implements IExecutor {
         }
         @Override
         public Object getData(int idChunk) {
-            byte[] data = collectedData.poll();
+            byte[] data = null;
+            synchronized (collectedData) {
+                data = collectedData.poll();
+            }
             if (data == null) {
                 return null;
             }
@@ -82,8 +86,10 @@ public class CycleShiftEncoder implements IExecutor {
 
     private class Notifier implements INotifier {
         @Override
-        public RC notify(int i) {
-            numWaitedChunks++;
+        public RC notify(int chunkId) {
+            synchronized (CycleShiftEncoder.this) {
+                numWaitedChunks++;
+            }
             return RC.CODE_SUCCESS;
         }
     }

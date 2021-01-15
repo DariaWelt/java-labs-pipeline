@@ -107,9 +107,18 @@ public class PipelineManager implements Runnable {
 
     @Override
     public void run() {
-        for (int i = 0; i < pipeline.length; ++i) {
-            Thread thread = new Thread(pipeline[i]);
-            thread.start();
+        Thread[] threads = new Thread[pipeline.length];
+        for (int i = 0; i < pipeline.length; i++) {
+            threads[i] = new Thread(pipeline[i]);
+            threads[i].start();
+        }
+        for (Thread thread: threads) {
+            try {
+                thread.join();
+            } catch (InterruptedException e) {
+                LOGGER.log(Level.WARNING, LogType.FAULT_IN_METHOD.toString(), RC.CODE_SYNCHRONIZATION_ERROR);
+                return;
+            }
         }
 
     }

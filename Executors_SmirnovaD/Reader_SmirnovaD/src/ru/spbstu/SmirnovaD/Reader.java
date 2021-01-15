@@ -23,7 +23,7 @@ public class Reader implements IReader {
     private INotifier notifier;
     private int bufferCapacity;
     private byte[] processedData;
-    private Queue<byte[]> collectedData;
+    private final Queue<byte[]> collectedData;
 
 
     public Reader(Logger logger) {
@@ -43,18 +43,19 @@ public class Reader implements IReader {
         }
         byte[] buffer = new byte[bufferCapacity];
         try {
-            int readed = stream.read(buffer);
-            while (readed >= 0) {
+            int already_read = stream.read(buffer);
+            while (already_read >= 0) {
+                already_read += already_read % 2;
+                processedData = Arrays.copyOfRange(buffer, 0, already_read);
                 synchronized (collectedData) {
-                    if (readed % 2 != 0)
-                        readed += 1;
-                    processedData = Arrays.copyOfRange(buffer, 0, readed);
                     collectedData.add(processedData);
-                    notifier.notify(0);
-                    readed = stream.read(buffer);
                 }
+                notifier.notify(0);
+                already_read = stream.read(buffer);
             }
-            collectedData.add(null);
+            synchronized (collectedData) {
+                collectedData.add(null);
+            }
             notifier.notify(0);
         } catch (IOException e) {
             LOGGER.log(Level.WARNING, LogType.FAULT_IN_METHOD.toString(),
@@ -70,7 +71,10 @@ public class Reader implements IReader {
         }
         @Override
         public Object getData(int idChunk) {
-            byte[] data = collectedData.poll();
+            byte[] data = null;
+            synchronized (collectedData) {
+                data = collectedData.poll();
+            }
             if (data == null)
                 return null;
             switch (returnedType) {
